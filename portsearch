@@ -1,0 +1,14 @@
+#!/bin/sh
+# search the FreeBSD ports tree with fzf
+
+make -C /usr/ports quicksearch key="$*" |
+    awk '/^Path:/ { sub("Path:\t/usr/ports/", ""); path = $0 }
+         /^Info:/ { sub("Info:\t", ""); info = $0 }
+         /^$/ { print path " ESC[4m" info "ESC[0m" }' |
+    fzf --preview="grep '^WWW=' /usr/ports/{1}/Makefile |
+            awk '{ printf \"\\n%s\\n\",\$2 }' |
+            cat /usr/ports/{1}/pkg-descr -" \
+        --preview-window=up \
+        --ansi |
+    awk '{ print $1 }'
+    
