@@ -1,50 +1,66 @@
 #!/usr/bin/env python
 
+"""
+Building web pages from Markdown documents.
+The conversion is done by markdown2 https://github.com/trentm/python-markdown2
+"""
+
+
 import argparse, markdown2
-from datetime import date
 from contextlib import redirect_stdout
 from os.path import exists
 from tkinter import messagebox
 
 
 class Setup:
-    """Keep your global namespace clean!"""
     indent = 4
-    metadata = {'title': 'Untitled',
-                'charset': 'utf-8',
-                'viewport': 'width=device-width, initial-scale=1.0',
-                'date': str(date.today()),
-                'author': 'anonymous',
-                'copyright': None}
+    charset = 'utf-8'
+    meta = {'viewport': 'width=device-width, initial-scale=1.0',
+             'title': "untitled",
+             'author': None,
+             'description': None,
+             'generator': "mdconv.py",
+             'keywords': None,
+             'robots': None}
 setup=Setup()
-
 
 class Node:
     """Class for HTML nodes"""
-    def __init__(self, content, preamble, epilog):
-        self.content = content
-        self.preamble = preamble
-        self.epilog = epilog
+    def __init__(self, tag, attributes={}, content=None):
+        self.tag = tag
+        self.attributes = attributes
+        if content:
+            self.content = content
+        else:
+            self.content = []
 
     def add_content(self, c):
         self.content.append(c)
 
+    def add_attribute(self, a, val):
+        self.attributes[a] = val
+
     def print_html(self, depth=0):
-        ind = depth * setup.indent * " "
-        print(ind + self.preamble)
-        for i in self.content:
-            i.print_html(depth + 1)
-        print(ind + self.epilog)
-
-class Leaf:
-    """HTML nodes that have no children"""
-    def __init__(self, content):
-        self.content = content
-
-    def print_html(self, depth):
-        ind = depth * setup.indent * " "
-        for i in self.content.splitlines():
-            print(ind + i)
+        line = depth * setup.indent * ' ' + '<' + self.tag
+        for k, v in self.attributes.items():
+            line += ' {0}="{1}"'.format(k, v)
+        line += '>'
+        if not self.content:
+            print(line)
+            return
+        if len(self.content) == 1 and isinstance(self.content[0], str):
+            line += self.content[0]
+        else:
+            print(line)
+            line = depth * setup.indent * ' '
+            for i in self.content:
+                if isinstance(i, Node):
+                    i.print_html(depth+1)
+                else:
+                    for l in i.splitlines():
+                        print(line + setup.indent * ' ' + l)
+        line += "".format(self.tag)
+        print(line)
 
 
 def get_args():
@@ -59,56 +75,49 @@ def get_args():
 
 def parse(file):
     html = markdown2.markdown_path(file, extras=["metadata"], tab_width=setup.indent)
-    att = ''
-    if html.metadata != None:
-        for i in html.metadata.keys():
-            if i.lower() in setup.metadata:
-                setup.metadata[i.lower()] = html.metadata[i]
-            if i.lower() in ('class', 'id', 'title'):
-                att += '{0}="{1}" '.format(i.lower(), html.metadata[i])
-    return '<article ' + att + '>\n' + html + '\n</article>'
+    if html.metadata:
+        for k, v in html.metadata.items():
+            if k.lower() in setup.meta:
+                setup.meta[k.lower()] = v
+    return html
 
 
-def meta(head):
-    head.add_content(Leaf('<meta charset="{0}">'.format(setup.metadata['charset'])))
-    del setup.metadata['charset']
-    head.add_content(Leaf('<title>{0}</title>'.format(setup.metadata['title'])))
-    del setup.metadata['title']
-    for i in setup.metadata.keys():
-        if setup.metadata[i] != None:
-            line=Leaf('<meta name="{0}" content="{1}">'.format(i, setup.metadata[i]))
-            head.add_content(line)
-
+def output(node, file):
+    if not file:
+        node.print_html()
+        return
+    with open(file, 'w', encoding=setup.charset) as f:
+        with redirect_stdout(f):
+            print('')
+            node.print_html()
 
 
 def main():
     cli_args = get_args()
+    # warn user before we overwrite a file
+    if (cli_args.out and exists(cli_args.out) and
+        not messagebox.askokcancel('Mardown Converter',
+                                   'Overwrite {0}'.format(cli_args.out),
+                                   icon='warning')):
+        exit(2)
 
-    body = Node([], "<body>", "</body>")
-    for article in cli_args.file:
-        body.add_content(Leaf(parse(article)))
+    body = Node('body')
+    for i in cli_args.file:
+        body.add_content(Node('article', content=[parse(i), Node('br')]))
 
+    head = Node('head')
+    head.add_content(Node('meta', attributes={'charset': setup.charset}))
     if cli_args.title != None:
-        setup.metadata[title] = cli_args.title
+        setup.meta['title'] = cli_args.title
+    head.add_content(Node("title", content=[setup.meta['title']]))
+    del setup.meta['title']
+    for n, c in setup.meta.items():
+        if c:
+            head.add_content(Node('meta', attributes={'name': n, 'content': c}))
 
-    head = Node([], "<head>", "</head>")
-    meta(head)
+    page = Node('html', content=[head, body])
 
-    page = Node([head, body], '<!DOCTYPE html>\n<html>', '</html>')
-
-    if cli_args.out != None:
-        # dialog doesn't look nice, but we get attention
-        if (exists(cli_args.out) and
-            messagebox.askokcancel('Markdown Converter',
-                                   'Overwrite existing file {0}?'.format(cli_args.out),
-                                   icon='warning') == False):
-            exit(2)
-        with open(cli_args.out, 'w') as out:
-            with redirect_stdout(out):
-                page.print_html()
-    else:
-        page.print_html()
-
+    output(page, cli_args.out)
 
 
 if __name__ == "__main__":
