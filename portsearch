@@ -5,6 +5,7 @@ make -C /usr/ports quicksearch key="$*" |
     awk '/^Path:/ { sub("Path:\t/usr/ports/", ""); path = $0 }
 	 /^Info:/ { sub("Info:\t", ""); info = $0 }
 	 /^$/ { print path " [4m" info "[0m" }' |
+    uniq |
     fzf --preview="grep '^WWW=' /usr/ports/{1}/Makefile |
 	    awk '{ printf \"\\n%s\\n\",\$2 }' |
 	    cat /usr/ports/{1}/pkg-descr -" \
